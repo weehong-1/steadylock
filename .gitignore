@@ -1,0 +1,16 @@
+# .NET
+bin/
+obj/
+windows/artifacts/
+*.user
+.vs/
+TestResults/
+
+# Swift
+macos/.build/
+macos/.swiftpm/
+dist/
+
+# OS
+.DS_Store
+Thumbs.db

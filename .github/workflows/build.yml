@@ -1,0 +1,177 @@
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Windows (x64, self-contained single file)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Unit tests
+        run: dotnet test windows/SteadyVolume.sln -c Release
+
+      - name: Publish (single file, self-contained, no trimming)
+        shell: pwsh
+        run: ./windows/publish.ps1
+
+      - name: Add install scripts
+        shell: pwsh
+        run: Copy-Item install/windows/*.ps1 windows/artifacts/win-x64/
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: steadyvolume-windows-x64
+          path: windows/artifacts/win-x64
+          if-no-files-found: error
+
+  macos:
+    name: macOS (universal arm64 + x86_64)
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: macos
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Toolchain
+        run: swift --version
+
+      - name: Unit tests
+        run: swift test
+
+      - name: Build universal binaries
+        run: swift build -c release --arch arm64 --arch x86_64
+
+      - name: Check both architectures are present
+        run: |
+          BIN="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)"
+          for exe in steadyvolumed steadyvol; do
+            lipo "$BIN/$exe" -verify_arch arm64 x86_64
+            lipo -info "$BIN/$exe"
+          done
+          "$BIN/steadyvolumed" --version
+          "$BIN/steadyvol" version
+
+      - name: Check install scripts
+        run: |
+          bash -n ../install/macos/install.sh
+          bash -n ../install/macos/uninstall.sh
+          plutil -lint Resources/com.steadyvolume.daemon.plist
+
+      - name: Collect artifacts
+        run: |
+          BIN="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)"
+          mkdir -p ../dist
+          cp "$BIN/steadyvolumed" "$BIN/steadyvol" Resources/com.steadyvolume.daemon.plist ../install/macos/*.sh ../dist/
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: steadyvolume-macos-universal
+          path: dist
+          if-no-files-found: error
+
+      # Runs the real installer the way a user does after downloading the zip: files carry the
+      # download quarantine flag and have lost their executable bit. Checks the daemon loads, answers
+      # and has no quarantine flag, then unprotects and uninstalls. The runner has no speakers, so the
+      # probe is skipped and nothing is locked.
+      - name: Install test (downloaded copy)
+        working-directory: ${{ github.workspace }}
+        env:
+          PW: CiTest-Password-42
+        run: |
+          set -euo pipefail
+          echo "Gatekeeper: $(spctl --status 2>&1 || true)"
+          T="$RUNNER_TEMP/Downloads/steadyvolume-macos-universal"
+          mkdir -p "$T"
+          cp dist/* "$T/"
+          chmod -x "$T"/*
+          xattr -w com.apple.quarantine "0083;$(printf %x "$(date +%s)");Safari;" "$T"/*
+          xattr -l "$T/steadyvolumed"
+
+          printf '%s\n%s\n' "$PW" "$PW" | sudo bash "$T/install.sh" --skip-probe
+
+          sudo launchctl print system/com.steadyvolume.daemon | grep -E 'state =|pid =|last exit'
+          sudo launchctl print system/com.steadyvolume.daemon | grep -q 'state = running'
+          for f in /usr/local/libexec/steadyvolume/steadyvolumed /usr/local/bin/steadyvol; do
+            if xattr -p com.apple.quarantine "$f" >/dev/null 2>&1; then echo "quarantine flag left on $f"; exit 1; fi
+            codesign --verify "$f"
+          done
+          steadyvol status
+
+          printf '%s\n' "$PW" | steadyvol unprotect
+          sudo bash "$T/uninstall.sh"
+          if [[ -e /Library/LaunchDaemons/com.steadyvolume.daemon.plist || -e /usr/local/bin/steadyvol ]]; then
+            echo "uninstall left files behind"; exit 1
+          fi
+          if /usr/bin/log show --last 5m --style compact --predicate 'subsystem == "com.steadyvolume"' | grep -F '[9003]'; then
+            echo "the daemon logged control connection errors during a normal install"; exit 1
+          fi
+
+      - name: Daemon log (install test)
+        if: always()
+        working-directory: ${{ github.workspace }}
+        run: |
+          /usr/bin/log show --last 10m --style compact --predicate 'subsystem == "com.steadyvolume"' | tail -n 60 || true
+          /usr/bin/log show --last 10m --style compact --predicate 'process == "launchd" AND eventMessage CONTAINS "steadyvolume"' | tail -n 40 || true
+
+  # Releases: push a tag such as v1.0.1 (after setting that version in windows/Directory.Build.props and
+  # macos/Sources/SteadyVolumeCore/Paths.swift). Both builds above run on the tag; this job then puts
+  # their artifacts on a DRAFT GitHub release, which you review and publish by hand.
+  # Development builds: every push to main uploads artifacts; the README links them through nightly.link.
+  release:
+    name: Draft GitHub release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: [windows, macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check the tag matches the version in both codebases
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          WINDOWS="$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' windows/Directory.Build.props | head -1)"
+          MACOS="$(sed -n 's/.*static let version = "\(.*\)".*/\1/p' macos/Sources/SteadyVolumeCore/Paths.swift | head -1)"
+          echo "Tag: $VERSION  Windows: $WINDOWS  macOS: $MACOS"
+          if [[ "$VERSION" != "$WINDOWS" || "$VERSION" != "$MACOS" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match the version in the code (Windows $WINDOWS, macOS $MACOS)."
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+
+      - name: Package
+        run: |
+          mkdir release
+          # Artifacts do not keep the executable bit; put it back before zipping.
+          chmod +x artifacts/steadyvolume-macos-universal/{steadyvolumed,steadyvol,install.sh,uninstall.sh}
+          (cd artifacts/steadyvolume-windows-x64 && zip -r -X "../../release/steadyvolume-${VERSION}-windows-x64.zip" .)
+          (cd artifacts/steadyvolume-macos-universal && zip -r -X "../../release/steadyvolume-${VERSION}-macos-universal.zip" .)
+          (cd release && sha256sum *.zip > SHA256SUMS.txt && cat SHA256SUMS.txt)
+
+      - name: Create or update the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PRERELEASE=""
+          [[ "$VERSION" == *-* ]] && PRERELEASE="--prerelease"   # e.g. v1.1.0-beta.1
+          # A re-run finds the draft already there and just replaces its files.
+          gh release create "$GITHUB_REF_NAME" release/* --draft $PRERELEASE --verify-tag \
+              --title "SteadyVolume $VERSION" --generate-notes \
+            || gh release upload "$GITHUB_REF_NAME" release/* --clobber
