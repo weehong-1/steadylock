@@ -2,7 +2,7 @@
 
 ## Mac
 
-**1. Download** [steadyvolume-macos-universal.zip](https://nightly.link/weehong-1/volume-lock/workflows/build/main/steadyvolume-macos-universal.zip) and double click it to unzip.
+**1. Download** [steadyvolume-macos-universal.zip](https://nightly.link/weehong-1/steadylock/workflows/build/main/steadyvolume-macos-universal.zip) and double click it to unzip.
 
 **2. Install.** Open Terminal and paste:
 
@@ -27,7 +27,7 @@ Done. Press a volume key: the volume jumps back.
 > xattr -dr com.apple.quarantine ~/Downloads/steadyvolume-macos-universal
 > ```
 >
-> Still failing? Restart the Mac and repeat step 2. Then [open an issue](https://github.com/weehong-1/volume-lock/issues) with the output.
+> Still failing? Restart the Mac and repeat step 2. Then [open an issue](https://github.com/weehong-1/steadylock/issues) with the output.
 
 **Remove it:**
 
@@ -38,7 +38,7 @@ sudo bash ~/Downloads/steadyvolume-macos-universal/uninstall.sh
 
 ## Windows
 
-**1. Download** [steadyvolume-windows-x64.zip](https://nightly.link/weehong-1/volume-lock/workflows/build/main/steadyvolume-windows-x64.zip), right click it, choose **Extract All**.
+**1. Download** [steadyvolume-windows-x64.zip](https://nightly.link/weehong-1/steadylock/workflows/build/main/steadyvolume-windows-x64.zip), right click it, choose **Extract All**.
 
 **2. Install.** Right click **Start**, choose **Terminal (Admin)**, and paste:
 

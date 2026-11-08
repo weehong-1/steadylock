@@ -19,7 +19,7 @@
 
 | Channel | What it is | Link |
 |---|---|---|
-| **Release** | A tagged version, reviewed and published by hand. Use this normally. | [Latest release](https://github.com/weehong-1/volume-lock/releases/latest) |
-| **Development build** | Whatever is on `main` right now, built by CI on every push. Untested beyond the unit tests. | [Windows](https://nightly.link/weehong-1/volume-lock/workflows/build/main/steadyvolume-windows-x64.zip) · [macOS](https://nightly.link/weehong-1/volume-lock/workflows/build/main/steadyvolume-macos-universal.zip) ([all files](https://nightly.link/weehong-1/volume-lock/workflows/build/main)) |
+| **Release** | A tagged version, reviewed and published by hand. Use this normally. | [Latest release](https://github.com/weehong-1/steadylock/releases/latest) |
+| **Development build** | Whatever is on `main` right now, built by CI on every push. Untested beyond the unit tests. | [Windows](https://nightly.link/weehong-1/steadylock/workflows/build/main/steadyvolume-windows-x64.zip) · [macOS](https://nightly.link/weehong-1/steadylock/workflows/build/main/steadyvolume-macos-universal.zip) ([all files](https://nightly.link/weehong-1/steadylock/workflows/build/main)) |
 
 Development builds come through [nightly.link](https://nightly.link), a third-party service that serves the latest successful CI artifacts without a GitHub login. GitHub keeps artifacts for 90 days, so the links stop working if nothing is pushed to `main` for that long.
